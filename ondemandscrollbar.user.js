@@ -4,16 +4,6 @@
 // @version   2.00 Beta
 // @include   *
 // ==/UserScript==
-(function(f) {
-    //for debug.
-    return function() {
-        var s = document.createElement('script');
-        s.setAttribute('type', 'text/javascript');
-        s.setAttribute('style', 'display: none;');
-        s.textContent = '(' + f.toString() + ')()';
-        (document.body || document.documentElement).appendChild(s);
-    };
-})
 (function() {
     
     var SCROLLBAR_NAMESPACE = 'http://www.hatena.ne.jp/miya2000/scrollbar/';
@@ -773,9 +763,9 @@
             this.showScrollbar(h1v2, 1300);
         };
         this.ev_view_scroll = function(e) {
-            if (e.target !== e.currentTarget) {
-                return;
-            }
+            if (e.target === e.currentTarget ||
+               (this.scrollable.isRoot() && e.target == document)
+            ) ; else return;
             var scr = this.scrollable;
             var h1v2 = this.status.scrollLeft != scr.getScrollLeft() ? 1 : 2;
             var sb = this.scrollbars[h1v2];
@@ -1222,14 +1212,14 @@
         };
         this.ev_do_scroll = function(e) {
             var cmd = e.data.command;
-            var axis, u1d2, dist;
+            var axis, u1d2, dist, smooth = this.option.smooth_scroll;
             switch(cmd) {
                 case 'backward': axis = 2; u1d2 = 1; dist = this.option.backwardDistance(this); break;
                 case 'forward':  axis = 2; u1d2 = 2; dist = this.option.forwardDistance(this); break;
                 case 'pageup':   axis = 2; u1d2 = 1; dist = this.option.pageupDistance(this); break;
                 case 'pagedown': axis = 2; u1d2 = 2; dist = this.option.pagedownDistance(this); break;
-                case 'end':      axis = 2; u1d2 = 2; dist = this.option.endDistance(this); break;
-                case 'home':     axis = 2; u1d2 = 1; dist = this.option.homeDistance(this); break;
+                case 'end':      axis = 2; u1d2 = 2; dist = this.option.endDistance(this); smooth = false; break;
+                case 'home':     axis = 2; u1d2 = 1; dist = this.option.homeDistance(this); smooth = false; break;
                 case 'left':     axis = 1; u1d2 = 1; dist = this.option.leftDistance(this); break;
                 case 'up':       axis = 2; u1d2 = 1; dist = this.option.upDistance(this); break;
                 case 'right':    axis = 1; u1d2 = 2; dist = this.option.rightDistance(this); break;
@@ -1254,7 +1244,7 @@
                     e.stopPropagation();
                 }
                 if (do_scroll) {
-                    this.scrollable.scrollDirectBy(axis, u1d2 == 1 ? -dist: dist, this.option.smooth_scroll);
+                    this.scrollable.scrollDirectBy(axis, u1d2 == 1 ? -dist: dist, smooth);
                 }
             }
         };
