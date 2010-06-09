@@ -765,10 +765,10 @@
             this.killScrollbar(h1v2);
             e.returnValue = false;
         };
-        this.ev_thumb_startThumbing = function tip_mousedown(h1v2) {
+        this.ev_thumb_startThumbing = function(h1v2) {
             this.holdScrollbarOpacity(h1v2, this.option.opacity_positive);
         };
-        this.ev_thumb_endThumbing = function tip_mousedown(h1v2) {
+        this.ev_thumb_endThumbing = function(h1v2) {
             this.clearHoldScrollbarOpacity(h1v2);
             this.showScrollbar(h1v2, 1300);
         };
@@ -930,7 +930,7 @@
             }
             return false;
         }
-        function document_mousedown(e) {
+        function document_click(e) {
             setLastClicked(e.target);
         }
         function window_blur(e) {
@@ -1016,7 +1016,7 @@
             return target.dispatchEvent(ev);
         }
         Scrollbars.finalize = runnable(
-            subscribe(document, 'mousedown', document_mousedown),
+            subscribe(document, 'click', document_click),
             subscribe(window, 'blur', window_blur),
             subscribe(document, 'keydown', document_keydown),
             subscribe(document, 'keypress', document_keypress)
@@ -1074,7 +1074,6 @@
             if (this.scrollable.isRoot()) {
                 detach.push(subscribe(window, 'scroll', bind(this, this.ev_view_scroll)));
                 detach.push(subscribe(document, 'mousewheel', bind(this, this.ev_view_wheel)));
-                detach.push(subscribe(document, 'mousedown', bind(this, this.ev_view_mousedown)));
                 detach.push(subscribe(document, SCROLLBAR_NAMESPACE + ':scroll', bind(this, this.ev_do_scroll)));
             }
             else {
