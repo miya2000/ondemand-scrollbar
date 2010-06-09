@@ -628,8 +628,8 @@
         this.hide = function hide() {
             this.scrollbar.style.display = 'none';
         };
-        this.update = function update() {
-            if (!this.scrollbar.parentNode || this.scrollbar.style.display == 'none') return;
+        this.update = function update(force) {
+            if (!force && (!this.scrollbar.parentNode || this.scrollbar.style.display == 'none')) return;
             if (this.direction == 1) this.updateHorizontal();
             else                     this.updateVertical();
         };
@@ -1090,12 +1090,17 @@
                 //detach.push(subscribe(this.container, 'mousemove', bind(this, this.update)));
             }
             // delay attach for heavy initializing page. (like the fastladder)
-            var delayAttach = bind(this, function() {
+            setTimeout(bind(this, function() {
                 if (detach) {
-                    detach.push(subscribe(this.container, 'DOMNodeInserted', bind(this, this.update)));
+                    var updateTid = null;
+                    var updateLater = bind(this, function() {
+                        if (updateTid) clearTimeout(updateTid);
+                        updateTid = setTimeout(bind(this, this.update, true), 100);
+                    });
+                    detach.push(subscribe(this.container, 'DOMNodeInserted', updateLater));
+                    detach.push(subscribe(this.container, 'DOMNodeRemoved', updateLater));
                 }
-            });
-            setTimeout(delayAttach, 5000);
+            }), 5000);
             this.detachEvents = function() { if (detach) run(detach); detach = null; };
         };
         this.ev_view_scroll = function(e) {
@@ -1206,7 +1211,7 @@
                 
                 // native vertical scrolling for Opera by wheel on root container.
                 // (prevent flickering while wheeling on iframe -> root window)
-                if (do_scroll && axis == 2 && Browser.Opera && this.scrollable.isRoot()) {
+                if (do_scroll && axis == 2 && Browser.Opera && (this.scrollable.isRoot() && e.target.nodeName != 'TEXTAREA')) {
                     do_scroll = false;
                 }
                 else // :-P
@@ -1258,9 +1263,17 @@
                 }
             }
         };
-        this.update = function() {
-            this.hScrollbar.update();
-            this.vScrollbar.update();
+        this.update = function(force) {
+            if (force) {
+                this.hScrollbar.hide();
+                this.vScrollbar.hide();
+            }
+            this.hScrollbar.update(force);
+            this.vScrollbar.update(force);
+            if (force) {
+                this.hScrollbar.show();
+                this.vScrollbar.show();
+            }
         };
         this.setLayoutMethod = function(absolute_or_fixed) {
             this.hScrollbar.setLayoutMethod(absolute_or_fixed);
