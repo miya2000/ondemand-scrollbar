@@ -168,8 +168,8 @@
         }
         function dispatchScrollEvent(target) {
             var ev = document.createEvent('HTMLEvents');
-            ev.initEvent('scroll', true, false);
-            target.dispatchEvent(ev);
+            ev.initEvent('scroll', false, false);
+            (target || document).dispatchEvent(ev);
         }
         function getClientWidth(viewElement) {
             return viewElement.clientWidth;
@@ -313,24 +313,29 @@
             useCapture = !!useCapture;
             if (target == window) {
                 w_ael.call(window, type, listener, useCapture);
-                return function() { w_rel.call(window, type, listener, useCapture); };
+                var disposed = false;
+                return function() { if (!disposed) w_rel.call(window, type, listener, useCapture); disposed = true; };
             }
             else {
                 target.addEventListener(type, listener, useCapture);
-                return function() { target.removeEventListener(type, listener, useCapture); };
+                var disposed = false;
+                return function() { if (!disposed) target.removeEventListener(type, listener, useCapture); disposed = true; };
             }
         };
         return subscribe;
     })();
     function bind(thisobj, func/*, arg1, ...*/) {
-        if (typeof func != 'function') throw new Error("invalid argument. func:" + func);
+        if (typeof func != 'function' && typeof thisobj[func] != 'function') {
+            throw new Error("invalid argument. func:" + func);
+        }
         var pre_args = [];
         pre_args.push.apply(pre_args, arguments);
         pre_args = pre_args.slice(2);
         return function() {
             var args = pre_args.concat();
             args.push.apply(args, arguments);
-            return func.apply(thisobj, args);
+            var f = (typeof func == 'function') ? func : thisobj[func];
+            return f.apply(thisobj, args);
         };
     }
     function run(/*f1, ...*/) {
@@ -355,7 +360,7 @@
             }
         }
     }
-    function wheelDelta(e){
+    function wheelDelta(e) {
         if (e.wheelDelta)  return e.wheelDelta / 120;
         else if (e.detail) return -e.detail / 3;
     }
@@ -620,10 +625,8 @@
             if (this.onEndThumbing) this.onEndThumbing();
         }
         this.show = function show() {
-            this.scrollbar.style.visibility = 'hidden';
+            this.update(true);
             this.scrollbar.style.display = 'block';
-            this.update();
-            this.scrollbar.style.visibility = '';
         };
         this.hide = function hide() {
             this.scrollbar.style.display = 'none';
@@ -773,9 +776,7 @@
             this.showScrollbar(h1v2, 1300);
         };
         this.ev_view_scroll = function(e) {
-            if (e.target === e.currentTarget ||
-               (this.scrollable.isRoot() && e.target == document)
-            ) ; else return;
+            if (e.eventPhase != 2) return;
             var scr = this.scrollable;
             var h1v2 = this.status.scrollLeft != scr.getScrollLeft() ? 1 : 2;
             var sb = this.scrollbars[h1v2];
@@ -994,7 +995,7 @@
             }
         }
         function checkTarget(e) {
-            if (e.target === e.currentTarget) return true;
+            if (e.eventPhase == 2) return true;
             if (/^(?:TEXTAREA|INPUT|SELECT|BUTTON)$/.test(e.target.nodeName)) return false;
             return true;
         }
@@ -1079,33 +1080,57 @@
             else {
                 detach.push(subscribe(this.container, 'scroll', bind(this, this.ev_view_scroll)));
                 detach.push(subscribe(this.container, 'mousewheel', bind(this, this.ev_view_wheel)));
-                detach.push(subscribe(this.container, 'mousedown', bind(this, this.ev_view_mousedown)));
                 detach.push(subscribe(this.container, SCROLLBAR_NAMESPACE + ':scroll', bind(this, this.ev_do_scroll)));
+                if (Browser.Opera) {
+                    // for Opera's link drag.
+                    var mousedown = bind(this, this.ev_view_mousedown);
+                    var dispose_mousedown_impl = null;
+                    var subscribe_mousedown = bind(this, function() {
+                        if (!dispose_mousedown_impl) dispose_mousedown_impl = subscribe(this.container, 'mousedown', mousedown);
+                        return dispose_mousedown;
+                    });
+                    var dispose_mousedown = function() {
+                        if (dispose_mousedown_impl) dispose_mousedown_impl();
+                        dispose_mousedown_impl = null;
+                    };
+                    detach.push(subscribe(this.container, 'mouseover', function(e) {
+                        var target = e.target;
+                        while (target != e.currentTarget) {
+                            if (target.nodeName == 'A') { dispose_mousedown(); break; }
+                            target = target.parentNode;
+                        }
+                    }));
+                    detach.push(subscribe(this.container, 'mouseout', subscribe_mousedown));
+                    detach.push(subscribe_mousedown());
+                }
+                else {
+                    detach.push(subscribe(this.container, 'mousedown', bind(this, this.ev_view_mousedown)));
+                }
             }
-            detach.push(subscribe(window, 'resize', bind(this, this.update)));
             if (Browser.Opera && !this.scrollable.isRoot()) {
                 // When the overflow property of ancestor's container is changed, this container's scroll position is reset(0, 0). 
                 // Therefore, it is necessary to update it as much as possible. 
                 //detach.push(subscribe(this.container, 'mousemove', bind(this, this.update)));
             }
-            // delay attach for heavy initializing page. (like the fastladder)
+            // delay attach for heavy initializing page. (like the fastladder.)
             setTimeout(bind(this, function() {
                 if (detach) {
-                    var updateTid = null;
-                    var updateLater = bind(this, function() {
-                        if (updateTid) clearTimeout(updateTid);
-                        updateTid = setTimeout(bind(this, this.update, true), 100);
-                    });
-                    detach.push(subscribe(this.container, 'DOMNodeInserted', updateLater));
-                    detach.push(subscribe(this.container, 'DOMNodeRemoved', updateLater));
+                    var layout = bind(this, this.layout);
+                    var layoutTid = null;
+                    var layoutLater = function() {
+                        if (layoutTid) clearTimeout(layoutTid);
+                        layoutTid = setTimeout(layout, 50);
+                    };
+                    detach.push(subscribe(window, 'resize', layoutLater));
+                    detach.push(subscribe(this.container, 'DOMNodeInserted', layoutLater));
+                    detach.push(subscribe(this.container, 'DOMNodeRemoved', layoutLater));
                 }
             }), 5000);
             this.detachEvents = function() { if (detach) run(detach); detach = null; };
         };
         this.ev_view_scroll = function(e) {
-            if (e.target === e.currentTarget) {
-                this.update();
-            }
+            if (e.eventPhase != 2) return;
+            this.update();
         };
         this.ev_view_mousedown = function(e) {
             this.clearDragData();
@@ -1116,10 +1141,10 @@
                     target = this.container;
                 }
                 if (target != this.container && Sfn.isScrollable(target)) {
-                    //TODO: fix
-                    //var pos = getAbsolutePosition(this.container);
+                    // ignore on native scrollbar.
                     if (e.offsetX < target.clientLeft || e.offsetX > target.clientWidth  + target.clientLeft) return;
                     if (e.offsetX < target.clientTop  || e.offsetY > target.clientHeight + target.clientTop) return;
+                    // :P
                     if (target.nodeName == 'TEXTAREA' && Browser.Opera) return;
                 }
                 while(target != this.container) {
@@ -1213,7 +1238,7 @@
                 if (do_scroll && axis == 2 && Browser.Opera && (this.scrollable.isRoot() && e.target.nodeName != 'TEXTAREA')) {
                     do_scroll = false;
                 }
-                else // :-P
+                else // :P
                 if (do_scroll || (on_sb && this.scrollable.isScrollable(axis)) || (lastClicked(this.container) && this.scrollable.isScrollable())) {
                     e.preventDefault();
                     e.returnValue = false; // flag for nested scrollbars.
@@ -1262,17 +1287,17 @@
                 }
             }
         };
-        this.update = function(force) {
-            if (force) {
-                this.hScrollbar.hide();
-                this.vScrollbar.hide();
-            }
-            this.hScrollbar.update(force);
-            this.vScrollbar.update(force);
-            if (force) {
-                this.hScrollbar.show();
-                this.vScrollbar.show();
-            }
+        this.update = function() {
+            this.hScrollbar.update();
+            this.vScrollbar.update();
+        };
+        this.layout = function() {
+            var sL = this.scrollable.getScrollLeft();
+            var sT = this.scrollable.getScrollTop();
+            this.scrollable.scrollTo(0, 0); // force re-layout.
+            this.hide();
+            this.scrollable.scrollTo(sL, sT); // take back.
+            this.show();
         };
         this.setLayoutMethod = function(absolute_or_fixed) {
             this.hScrollbar.setLayoutMethod(absolute_or_fixed);
@@ -1477,9 +1502,9 @@
                     rc.style.WebkitBoxSizing = 'border-box';
                 }
             }
+            var barColor = '#B1D9FF';
             var lcScroll = new Scrollbars(document.getElementById('subs_container'));
             //lcScroll.setPosition('BL');
-            var barColor = '#B1D9FF';
             lcScroll.hScrollbar.thumb.style.backgroundColor = barColor;
             lcScroll.vScrollbar.thumb.style.backgroundColor = barColor;
             var rcScroll = new Scrollbars(document.getElementById('right_container'));
